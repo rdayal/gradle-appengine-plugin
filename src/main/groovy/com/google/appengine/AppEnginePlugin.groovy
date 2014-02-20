@@ -22,6 +22,7 @@ import com.google.appengine.task.RunTask
 import com.google.appengine.task.StopTask
 import com.google.appengine.task.WebAppDirTask
 import com.google.appengine.task.endpoints.EndpointsTask
+import com.google.appengine.task.endpoints.ExpandSourceTask
 import com.google.appengine.task.endpoints.GetClientLibsTask
 import com.google.appengine.task.endpoints.GetDiscoveryDocsTask
 import com.google.appengine.task.endpoints.InstallClientLibsTask
@@ -480,6 +481,12 @@ class AppEnginePlugin implements Plugin<Project> {
         endpointsInstallClientLibs.description = 'Generate Endpoints java client libraries for classes defined in web.xml and install them into the local Maven repository'
         endpointsInstallClientLibs.group = APPENGINE_GROUP
         endpointsInstallClientLibs.dependsOn(endpointsGetClientLibs)
+
+        ExpandSourceTask endpointsExpandSourceTask = project.tasks.create('appengineEndpointExpandClientLibSource', ExpandSourceTask)
+        endpointsExpandSourceTask.description = 'Expand sources'
+        endpointsExpandSourceTask.group = APPENGINE_GROUP
+        endpointsExpandSourceTask.dependsOn(endpointsGetClientLibs)
+
 
         project.gradle.projectsEvaluated {
             if(appEnginePluginConvention.endpoints.getDiscoveryDocsOnBuild) {
