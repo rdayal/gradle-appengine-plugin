@@ -26,17 +26,21 @@ import com.google.appengine.task.endpoints.ExpandSourceTask
 import com.google.appengine.task.endpoints.GetClientLibsTask
 import com.google.appengine.task.endpoints.GetDiscoveryDocsTask
 import com.google.appengine.task.endpoints.InstallClientLibsTask
+import org.apache.tools.ant.taskdefs.Get
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.artifacts.ExternalDependency
+import org.gradle.api.artifacts.PublishArtifact
 import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.api.plugins.*
 import com.google.appengine.task.appcfg.*
 import com.google.appengine.task.appcfg.backends.*
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.testing.Test
 import org.gradle.plugins.ear.EarPluginConvention
 import org.gradle.plugins.ide.eclipse.EclipsePlugin
@@ -81,6 +85,7 @@ class AppEnginePlugin implements Plugin<Project> {
     static final String APPENGINE_FUNCTIONAL_TEST = 'appengineFunctionalTest'
     static final String APPENGINE_ENDPOINTS_GET_DISCOVERY_DOCS = "appengineEndpointsGetDiscoveryDocs"
     static final String APPENGINE_ENDPOINTS_GET_CLIENT_LIBS = "appengineEndpointsGetClientLibs"
+    static final String APPENGINE_ENDPOINTS_GET_CLIENT_LIBS_SRC = "appengineEndpointGetClientLibsSource"
     static final String APPENGINE_ENDPOINTS_INSTALL_CLIENT_LIBS = "appengineEndpointsInstallClientLibs"
     static final String GRADLE_USER_PROP_PASSWORD = 'appenginePassword'
     static final String EXPLODED_WAR_DIR_CONVENTION_PARAM = 'explodedAppDirectory'
@@ -88,6 +93,7 @@ class AppEnginePlugin implements Plugin<Project> {
     static final String ENDPOINTS_CLIENT_LIB_CONVENTION_PARAM = "clientLibDirectory"
     static final String ENDPOINTS_DISCOVERY_DOC_CONVENTION_PARAM = "discoveryDocDirectory"
     static final String ENDPOINTS_DISCOVERY_DOC_FORMAT_PARAM = "discoveryDocFormat"
+    static final String ENDPOINTS_CLIENT_LIB_COPYSRC_CONVENTION_PARAM = "copySourceToDirectory"
     static final String BACKEND_PROJECT_PROPERTY = 'backend'
     static final String SETTING_PROJECT_PROPERTY = 'setting'
     static final String FUNCTIONAL_TEST_COMPILE_CONFIGURATION = 'functionalTestCompile'
@@ -107,6 +113,7 @@ class AppEnginePlugin implements Plugin<Project> {
         File downloadedAppDirectory = getDownloadedAppDirectory(project)
         File discoveryDocDirectory = getDiscoveryDocDirectory(project)
         File endpointsClientLibDirectory = getEndpointsClientLibDirectory(project)
+        File endpointsCopySourceToDirectory = getEndpointsCopySourceToDir(project);
         configureDownloadSdk(project, explodedSdkDirectory)
         configureWebAppDir(project)
         configureAppConfig(project, appenginePluginConvention)
@@ -136,7 +143,7 @@ class AppEnginePlugin implements Plugin<Project> {
         configureDeleteBackend(project)
         configureConfigureBackends(project)
         configureUpdateAll(project)
-        configureEndpoints(project, discoveryDocDirectory, endpointsClientLibDirectory, appenginePluginConvention)
+        configureEndpoints(project, discoveryDocDirectory, endpointsClientLibDirectory, endpointsCopySourceToDirectory, appenginePluginConvention)
         configureFunctionalTest(project, appenginePluginConvention)
     }
 
@@ -160,6 +167,10 @@ class AppEnginePlugin implements Plugin<Project> {
         getBuildSubDirectory(project, 'client-libs');
     }
 
+    private File getEndpointsCopySourceToDir(Project project)   {
+        new File(getEndpointsClientLibDirectory(project), "generatedSrc");
+    }
+
     private File getBuildSubDirectory(Project project, String subDirectory) {
         def subDir = new StringBuilder()
         subDir <<= project.buildDir
@@ -167,7 +178,6 @@ class AppEnginePlugin implements Plugin<Project> {
         subDir <<= subDirectory
         new File(subDir.toString())
     }
-
 
     private void configureDownloadSdk(Project project, File explodedSdkDirectory) {
         project.tasks.withType(DownloadSdkTask).whenTaskAdded { DownloadSdkTask appengineDownloadSdkTask ->
@@ -450,17 +460,24 @@ class AppEnginePlugin implements Plugin<Project> {
         appengineUpdateAllTask.dependsOn project.appengineUpdate, project.appengineUpdateAllBackends
     }
 
-    public void configureEndpoints(Project project, File discoveryDocDirectory, File endpointsClientLibDirectory, AppEnginePluginConvention appEnginePluginConvention) {
+    public void configureEndpoints(Project project, File discoveryDocDirectory, File endpointsClientLibDirectory, File endpointsCopySourceToDirectory,
+                                   AppEnginePluginConvention appEnginePluginConvention) {
         project.tasks.withType(EndpointsTask).whenTaskAdded { EndpointsTask endpointsTask ->
             endpointsTask.conventionMapping.map('classesDirectory') { project.tasks.compileJava.destinationDir }
             endpointsTask.conventionMapping.map('webappDirectory') { getAppDir(project) }
             endpointsTask.conventionMapping.map('serviceClasses') { appEnginePluginConvention.endpoints.serviceClasses }
-            if(endpointsTask instanceof GetDiscoveryDocsTask) {
+
+
+            if (endpointsTask instanceof GetDiscoveryDocsTask) {
                 endpointsTask.conventionMapping.map(ENDPOINTS_DISCOVERY_DOC_CONVENTION_PARAM) { discoveryDocDirectory }
                 endpointsTask.conventionMapping.map(ENDPOINTS_DISCOVERY_DOC_FORMAT_PARAM) { appEnginePluginConvention.endpoints.discoveryDocFormat }
-            }
-            else if(endpointsTask instanceof GetClientLibsTask || endpointsTask instanceof InstallClientLibsTask) {
+            } else if (endpointsTask instanceof GetClientLibsTask) {
                 endpointsTask.conventionMapping.map(ENDPOINTS_CLIENT_LIB_CONVENTION_PARAM) { endpointsClientLibDirectory }
+            } else if (endpointsTask instanceof InstallClientLibsTask) {
+                endpointsTask.conventionMapping.map(ENDPOINTS_CLIENT_LIB_CONVENTION_PARAM) { endpointsClientLibDirectory }
+            } else if (endpointsTask instanceof ExpandSourceTask) {
+                endpointsTask.conventionMapping.map(ENDPOINTS_CLIENT_LIB_CONVENTION_PARAM) { endpointsClientLibDirectory }
+                endpointsTask.conventionMapping.map(ENDPOINTS_CLIENT_LIB_COPYSRC_CONVENTION_PARAM) { endpointsCopySourceToDirectory }
             }
         }
 
@@ -484,12 +501,39 @@ class AppEnginePlugin implements Plugin<Project> {
         endpointsInstallClientLibs.group = APPENGINE_GROUP
         endpointsInstallClientLibs.dependsOn(endpointsGetClientLibs)
 
-        ExpandSourceTask endpointsExpandSourceTask = project.tasks.create('appengineEndpointExpandClientLibSource', ExpandSourceTask)
-        endpointsExpandSourceTask.description = 'Expand sources'
+        ExpandSourceTask endpointsExpandSourceTask = project.tasks.create(APPENGINE_ENDPOINTS_GET_CLIENT_LIBS_SRC, ExpandSourceTask)
+        endpointsExpandSourceTask.description = 'Generate Endpoints java client libraries for classes defined in web.xml and extract the source files'
         endpointsExpandSourceTask.group = APPENGINE_GROUP
         endpointsExpandSourceTask.dependsOn(endpointsGetClientLibs)
 
+        // TODO: Get rid of constants
 
+        // Define SourceSet
+        SourceSet endpointsSourceSet = project.sourceSets.add("endpointsLib")
+        endpointsSourceSet.getJava().srcDir(endpointsCopySourceToDirectory)
+
+        // TODO: Hardcoded, Need to fix this.
+        project.dependencies.add("endpointsLibCompile", "com.google.api.client:google-api-client:1.17.0-rc");
+
+        // Define Archive Task
+        Jar endpointsJarTask = project.tasks.create("endpointsJar", Jar);
+        endpointsJarTask.classifier = "endpoints"
+        endpointsJarTask.from(endpointsSourceSet.output);
+
+        // Create the configuration
+        Configuration endpointsConfig = project.configurations.create("endpoints")
+        // Declare the artifact associated with the configuration
+        project.artifacts.add("endpoints", endpointsJarTask)
+
+        // Move higher?
+        project.tasks.withType(EndpointsTask).whenTaskAdded { Task t ->
+            // TODO: Hardcoded, fix this
+            if (t.getName().equals("compileEndpointsLibJava")) {
+                t.dependsOn(endpointsExpandSourceTask);
+            }
+        }
+
+        // Define configurations
         project.gradle.projectsEvaluated {
             if(appEnginePluginConvention.endpoints.getDiscoveryDocsOnBuild) {
                 project.tasks.getByName(WarPlugin.WAR_TASK_NAME).dependsOn(endpointsGetDiscoveryDocs)

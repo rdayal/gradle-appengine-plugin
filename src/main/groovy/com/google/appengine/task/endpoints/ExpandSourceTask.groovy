@@ -40,18 +40,20 @@ class ExpandSourceTask extends EndpointsTask {
     File clientLibDirectory;
 
     @OutputDirectory
-    File copyToDir;
+    File copySourceToDirectory;
 
     @Override
     void executeTask() {
-        logger.debug "expanding sources to " + getCopyToDir()
+        logger.debug "expanding sources to " + getCopySourceToDirectory()
         expandSourceLocally()
     }
 
     private expandSourceLocally() {
-        // First, look for a zip file in the directory where the client library was downloaded to
-        def zips = getClientLibDirectory().listFiles()
+
+        def zips = getClientLibDirectory().listFiles([accept:{dir, file -> file.endsWith(".zip")}] as FilenameFilter);
+
         assert zips.length > 0
+        logger.info "Installing client libraries from zip : ${zips*.toString()}"
 
         def clientLibGradleProjRoot = null;
 
@@ -60,44 +62,46 @@ class ExpandSourceTask extends EndpointsTask {
         destDir.delete()
         destDir.mkdir()
 
-        // Iterate through all of the entries of the zip file and extract its contents into destDir
-        def clientLibZipFile = new ZipFile(zips[0]);
-        clientLibZipFile.entries().each {
-            if (!it.directory) {
-                def fos = null
-                try {
-                    fos = new FileOutputStream(new File(destDir, it.name))
-                    fos.write(clientLibZipFile.getInputStream(it).bytes)
-                } finally {
-                    if (fos) {
-                        fos.close()
+        zips.each { clientZip ->
+            // Iterate through all of the entries of the zip file and extract its contents into destDir
+            def clientLibZipFile = new ZipFile(clientZip);
+            clientLibZipFile.entries().each {
+                if (!it.directory) {
+                    def fos = null
+                    try {
+                        fos = new FileOutputStream(new File(destDir, it.name))
+                        fos.write(clientLibZipFile.getInputStream(it).bytes)
+                    } finally {
+                        if (fos) {
+                            fos.close()
+                        }
                     }
-                }
 
-                // Keep track of the zip entry named 'build.gradle'. This is the 'root' of the endpoints client
-                // library Gradle package
-                if (it.name =~ /.*build.gradle$/) {
-                    clientLibGradleProjRoot = new File(destDir, it.name).getParentFile();
+                    // Keep track of the zip entry named 'build.gradle'. This is the 'root' of the endpoints client
+                    // library Gradle package
+                    if (it.name =~ /.*build.gradle$/) {
+                        clientLibGradleProjRoot = new File(destDir, it.name).getParentFile();
+                    }
+                } else {
+                    new File(destDir, it.name).mkdirs()
                 }
-            } else {
-                new File(destDir, it.name).mkdirs()
             }
-        }
 
-        if (!clientLibGradleProjRoot) {
-            logger.warn "Unable to locate the build.gradle file under " + destDir.absolutePath + "; unable to install the client libraries into the local Maven repository."
-            return
-        }
+            if (!clientLibGradleProjRoot) {
+                logger.warn "Unable to locate the build.gradle file under " + destDir.absolutePath + "; unable to install the client libraries into the local Maven repository."
+                return
+            }
 
-        // look for src/main/java as a peer of build.gradle
-        File srcRoot = new File(clientLibGradleProjRoot, "src/main/java");
-        if (!srcRoot.exists()) {
-            logger.warn "Unable to find src/main/java"
-            return
-        }
+            // look for src/main/java as a peer of build.gradle
+            File srcRoot = new File((File) clientLibGradleProjRoot, "src/main/java");
+            if (!srcRoot.exists()) {
+                logger.warn "Unable to find src/main/java"
+                return
+            }
 
-        new AntBuilder().copy(todir: getCopyToDir()) {
-            fileset(dir: srcRoot)
+            new AntBuilder().copy(todir: getCopySourceToDirectory()) {
+                fileset(dir: srcRoot)
+            }
         }
     }
 }
