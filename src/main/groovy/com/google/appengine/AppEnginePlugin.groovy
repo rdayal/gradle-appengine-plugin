@@ -15,6 +15,7 @@
  */
 package com.google.appengine
 
+import com.google.appengine.repackaged.com.google.common.collect.Lists
 import com.google.appengine.task.DownloadSdkTask
 import com.google.appengine.task.EnhanceTask
 import com.google.appengine.task.ExplodeAppTask
@@ -35,6 +36,8 @@ import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.ExternalDependency
 import org.gradle.api.artifacts.PublishArtifact
 import org.gradle.api.execution.TaskExecutionGraph
+import org.gradle.api.logging.LogLevel
+import org.gradle.api.logging.Logging
 import org.gradle.api.plugins.*
 import com.google.appengine.task.appcfg.*
 import com.google.appengine.task.appcfg.backends.*
@@ -507,13 +510,18 @@ class AppEnginePlugin implements Plugin<Project> {
         endpointsExpandSourceTask.dependsOn(endpointsGetClientLibs)
 
         // TODO: Get rid of constants
-
         // Define SourceSet
         SourceSet endpointsSourceSet = project.sourceSets.add("endpointsLib")
-        endpointsSourceSet.getJava().srcDir(endpointsCopySourceToDirectory)
+        endpointsSourceSet.getJava().setSrcDirs(Lists.asList(endpointsCopySourceToDirectory))
+        // Adding a source set has the effect of adding its associated compileJava task
+        project.tasks.getByName(endpointsSourceSet.getCompileJavaTaskName()).dependsOn(endpointsExpandSourceTask);
+
+        endpointsSourceSet.allJava.srcDirs.each { File file ->
+            Logging.getLogger(Plugin.class).log(LogLevel.ERROR, file.getAbsolutePath())
+        }
 
         // TODO: Hardcoded, Need to fix this.
-        project.dependencies.add("endpointsLibCompile", "com.google.api.client:google-api-client:1.17.0-rc");
+        project.dependencies.add(endpointsSourceSet.getCompileConfigurationName(), "com.google.api-client:google-api-client:1.17.0-rc");
 
         // Define Archive Task
         Jar endpointsJarTask = project.tasks.create("endpointsJar", Jar);
@@ -524,14 +532,6 @@ class AppEnginePlugin implements Plugin<Project> {
         Configuration endpointsConfig = project.configurations.create("endpoints")
         // Declare the artifact associated with the configuration
         project.artifacts.add("endpoints", endpointsJarTask)
-
-        // Move higher?
-        project.tasks.withType(EndpointsTask).whenTaskAdded { Task t ->
-            // TODO: Hardcoded, fix this
-            if (t.getName().equals("compileEndpointsLibJava")) {
-                t.dependsOn(endpointsExpandSourceTask);
-            }
-        }
 
         // Define configurations
         project.gradle.projectsEvaluated {
