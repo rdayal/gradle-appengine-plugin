@@ -509,7 +509,7 @@ class AppEnginePlugin implements Plugin<Project> {
         endpointsExpandSourceTask.group = APPENGINE_GROUP
         endpointsExpandSourceTask.dependsOn(endpointsGetClientLibs)
 
-        // TODO: Get rid of constants
+        // TODO (rdayal) : Get rid of constants
         // Define SourceSet
         SourceSet endpointsSourceSet = project.sourceSets.add("endpointsLib")
         endpointsSourceSet.getJava().setSrcDirs(Lists.asList(endpointsCopySourceToDirectory))
@@ -520,7 +520,7 @@ class AppEnginePlugin implements Plugin<Project> {
             Logging.getLogger(Plugin.class).log(LogLevel.ERROR, file.getAbsolutePath())
         }
 
-        // TODO: Hardcoded, Need to fix this.
+        // TODO (rdayal): Hardcoded, Need to fix this.
         project.dependencies.add(endpointsSourceSet.getCompileConfigurationName(), "com.google.api-client:google-api-client:1.17.0-rc");
 
         // Define Archive Task

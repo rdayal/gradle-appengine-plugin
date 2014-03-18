@@ -26,6 +26,8 @@ import java.util.zip.ZipFile
  *
  * This task has a dependency (task-level) on GetClientLibsTask.
  *
+ * TODO (rdayal): Refactor this; it shares a bunch of code with InstallClientLibsTask
+ *
  * @author Rajeev Dayal
  */
 @Incubating
